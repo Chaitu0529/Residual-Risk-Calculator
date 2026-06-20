@@ -1,0 +1,19 @@
+# Environment files
+.env
+.env.local
+
+# Node modules
+node_modules/
+
+# Build folders
+dist/
+build/
+
+# Java
+target/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
