@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Tool-114 — Residual Risk Calculator
+# docker-compose up --build
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: tool114-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-riskdb}
+      POSTGRES_USER:     ${POSTGRES_USER:-riskuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - tool114-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riskuser} -d ${POSTGRES_DB:-riskdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: tool114-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redispassword}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - tool114-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Backend (Spring Boot) ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tool114-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database — matches application.yml placeholders
+      DB_HOST:           postgres
+      DB_PORT:           5432
+      POSTGRES_DB:       ${POSTGRES_DB:-riskdb}
+      POSTGRES_USER:     ${POSTGRES_USER:-riskuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskpassword}
+      # Redis
+      REDIS_HOST:        redis
+      REDIS_PORT:        6379
+      REDIS_PASSWORD:    ${REDIS_PASSWORD:-redispassword}
+      # JWT
+      JWT_SECRET:                ${JWT_SECRET:-c2VjcmV0a2V5Zm9ydG9vbDExNHJpc2tjYWxjdWxhdG9yMjAyNHN1cGVyc2VjcmV0a2V5MTI4Yml0czEyOA==}
+      JWT_EXPIRATION_MS:         ${JWT_EXPIRATION_MS:-3600000}
+      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-86400000}
+      # AI Service
+      AI_SERVICE_URL:    http://ai-service:5000
+      # Email (optional — set in .env for real SMTP)
+      MAIL_HOST:         ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT:         ${MAIL_PORT:-587}
+      MAIL_USERNAME:     ${MAIL_USERNAME:-}
+      MAIL_PASSWORD:     ${MAIL_PASSWORD:-}
+      MAIL_FROM:         ${MAIL_FROM:-noreply@tool114.local}
+      # File Upload
+      UPLOAD_DIR:        /app/uploads
+      # App
+      BACKEND_PORT:      8080
+      SPRING_PROFILES_ACTIVE: docker
+    volumes:
+      - uploads_data:/app/uploads
+      - backend_logs:/app/logs
+    ports:
+      - "8080:8080"
+    networks:
+      - tool114-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── AI Service (Flask) ──────────────────────────────────────────────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: tool114-ai
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      GROQ_API_KEY:   ${GROQ_API_KEY:-your_groq_api_key_here}
+      REDIS_HOST:     redis
+      REDIS_PORT:     6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      FLASK_ENV:      production
+      PORT:           5000
+    ports:
+      - "5000:5000"
+    networks:
+      - tool114-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Frontend (React + Nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tool114-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - tool114-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+# ── Network ──────────────────────────────────────────────────────────────────
+networks:
+  tool114-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
