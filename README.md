@@ -4,6 +4,25 @@ An enterprise-grade, AI-powered residual risk management platform. Built for sec
 
 ---
 
+## Screenshots
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.jpeg)
+
+### Risk Records
+![Risk Records](docs/screenshots/Risk%20Records%20list.jpeg)
+
+### Create Risk Record
+![Create Risk](docs/screenshots/Create%20Risk%20form.jpeg)
+
+### Analytics
+![Analytics](docs/screenshots/Analytics%20page.jpeg)
+
+### Audit Log
+![Audit Log](docs/screenshots/Audit%20Log%20page.jpeg)
+
+---
+
 ## What is Risk?
 
 **Risk** is the possibility that an event will occur and negatively affect the achievement of objectives. In information security and enterprise risk management, every risk is measured across two dimensions:
